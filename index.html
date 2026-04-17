@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Factorize Slayer: Dual Core</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <!-- KaTeX CSS & JS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" integrity="sha384-GvrOXuhMATgEsSwCs4smul74iXGOixntILdUW9XmUC6+HX0sLNAK3q71bZ3dOxy6" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" integrity="sha384-cpW21h6RZv/phavutF+AuVYrr+dA8xD9zs6FwLpaCct6O9ctzYFfPe41jj1bHMo8" crossorigin="anonymous"></script>
+
+    <!-- Babel for React/JSX compilation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- React -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18",
+                "react-dom/client": "https://esm.sh/react-dom@18/client"
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Press Start 2P', cursive; background-color: #050505; color: #0ff; overflow-y: auto; user-select: none; min-height: 100vh; }
+        .scanline { background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1)); background-size: 100% 4px; position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 50; }
+        .crt-overlay { background: radial-gradient(circle, rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 100%); position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 40; animation: flicker 0.15s infinite; }
+        @keyframes flicker { 0% { opacity: 0.95; } 50% { opacity: 1; } 100% { opacity: 0.96; } }
+        .neon-text { text-shadow: 0 0 5px #0ff, 0 0 10px #0ff; }
+        .neon-pink { color: #f0f; text-shadow: 0 0 5px #f0f, 0 0 10px #f0f; }
+        .pixelated { image-rendering: pixelated; }
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+
+        // --- Utils & Math Logic ---
+        const cn = (...classes) => classes.filter(Boolean).join(' ');
+        const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+        const randomSign = () => Math.random() < 0.5 ? 1 : -1;
+        const gcd = (a, b) => { a = Math.abs(a); b = Math.abs(b); while (b) { let t = b; b = a % b; a = t; } return a; };
+
+        const formatFactor = (coeff, constVal) => {
+            let s = "";
+            if (coeff === 1) s += "x"; else if (coeff === -1) s += "-x"; else s += `${coeff}x`;
+            if (constVal > 0) s += `+${constVal}`; else if (constVal < 0) s += `${constVal}`; 
+            return s;
+        };
+
+        const formatPoly = (coeff, constant) => {
+            let c = coeff ? coeff.replace(/\s/g, '') : ''; if (c === '') c = '1';
+            let k = constant ? constant.replace(/\s/g, '') : '';
+            if (c === '1') c = 'x'; else if (c === '-1') c = '-x'; else if (c !== '') c = c + 'x';
+            if (k && !k.startsWith('+') && !k.startsWith('-')) k = '+' + k;
+            return c + k;
+        };
+
+        const expand = (a, b, c, d) => {
+            const A = a * c; const B = a * d + b * c; const C = b * d; let poly = "";
+            if (A === 1) poly += "x^2"; else if (A === -1) poly += "-x^2"; else poly += `${A}x^2`;
+            if (B === 1) poly += "+x";  else if (B === -1) poly += "-x";   else if (B > 0) poly += `+${B}x`; else if (B < 0) poly += `${B}x`;
+            if (C > 0) poly += `+${C}`; else if (C < 0) poly += `${C}`;
+            return poly;
+        };
+
+        const generateQuestion = (stage, count) => {
+            let a, b, c, d;
+            if (stage === 1) {
+                if (count === 4) { a = 1; c = 1; b = randomInt(10, 15) * randomSign(); d = randomInt(2, 15) * randomSign(); }
+                else {
+                    const type = Math.random();
+                    if (type < 0.25) { a = 1; c = 1; b = randomInt(1, 9); d = randomInt(1, 9); }
+                    else if (type < 0.75) { 
+                        a = 1; c = 1; const r = Math.random();
+                        if (r < 0.33) { b = -randomInt(1, 9); d = randomInt(1, 9); } else if (r < 0.66) { b = randomInt(1, 9); d = -randomInt(1, 9); } else { b = -randomInt(1, 9); d = -randomInt(1, 9); }
+                    } else {
+                        a = 1; c = 1; const val = randomInt(1, 9);
+                        if (Math.random() < 0.5) { b = Math.random() < 0.5 ? val : -val; d = b; } else { b = val; d = -val; }
+                    }
+                }
+            } else {
+                let coeffPairs; let constCandidates;
+                if (count === 4) { 
+                    coeffPairs = [[1, 2], [1, 3], [1, 5], [2, 3], [2, 5], [1, 4], [2, 2], [1, 6], [1, 9], [3, 3], [3, 4], [3, 5]];
+                    constCandidates = [1, 2, 3, 4, 5, 6, 9];
+                } else { 
+                    coeffPairs = [[1, 2], [1, 3], [1, 4], [2, 2]]; constCandidates = [1, 2, 3, 4, 5];
+                }
+                const pair = coeffPairs[randomInt(0, coeffPairs.length - 1)];
+                if (Math.random() < 0.5) { a = pair[0]; c = pair[1]; } else { a = pair[1]; c = pair[0]; }
+                do { b = constCandidates[randomInt(0, constCandidates.length - 1)] * randomSign(); } while (gcd(a, b) !== 1);
+                do { d = constCandidates[randomInt(0, constCandidates.length - 1)] * randomSign(); } while (gcd(c, d) !== 1);
+            }
+            return { latex: expand(a, b, c, d), answers: [formatFactor(a, b), formatFactor(c, d)] };
+        };
+
+        // --- Icons ---
+        const Heart = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" /></svg>;
+
+        // --- Components ---
+        const MathRenderer = ({ latex, className }) => {
+            const containerRef = useRef(null);
+            useEffect(() => {
+                if (window.katex && containerRef.current) {
+                    window.katex.render(latex, containerRef.current, { throwOnError: false, displayMode: true });
+                }
+            }, [latex]);
+            return <div ref={containerRef} className={cn("text-xl md:text-2xl lg:text-3xl neon-text py-1 tracking-wider min-h-[40px] flex items-center justify-center m-0", className)} />;
+        };
+
+        const Keypad = ({ onInput, onDelete, onEnter }) => {
+            const keys = ['7','8','9','4','5','6','1','2','3','-','0','+','DEL','OK'];
+            return (
+                <div className="grid grid-cols-3 gap-1 w-full max-w-[240px] mx-auto mt-4 select-none">
+                    {keys.map(k => (
+                        <button key={k} onClick={e => { e.preventDefault(); if(k==='DEL') onDelete(); else if(k==='OK') onEnter(); else onInput(k); }}
+                            className={cn("h-10 rounded-md border-b-4 font-bold text-sm sm:text-base transition-all active:border-b-0 active:translate-y-1", k === 'OK' ? "bg-cyan-900 border-cyan-700 text-cyan-100 col-span-2 shadow-[0_0_8px_rgba(8,145,178,0.6)] hover:bg-cyan-800" : k === 'DEL' ? "bg-red-900 border-red-700 text-red-100 hover:bg-red-800" : "bg-gray-800 border-gray-600 text-gray-200 hover:bg-gray-700")}
+                        >{k}</button>
+                    ))}
+                </div>
+            );
+        };
+
+        const ASSETS = {
+            NORMAL: "https://cdn.jsdelivr.net/gh/kinoshitatomofumi62/my-assets@main/aaf0.png", HIT: "https://cdn.jsdelivr.net/gh/kinoshitatomofumi62/my-assets@main/aaf1.png",
+            ATTACK: "https://cdn.jsdelivr.net/gh/kinoshitatomofumi62/my-assets@main/aaf2.png", DEFEAT: "https://cdn.jsdelivr.net/gh/kinoshitatomofumi62/my-assets@main/aaf3.png",
+            WIN_MISS: "https://cdn.jsdelivr.net/gh/kinoshitatomofumi62/my-assets@main/aaf4.png", WIN_PERFECT: "https://cdn.jsdelivr.net/gh/kinoshitatomofumi62/my-assets@main/aaf5.png"
+        };
+        const GAME_STATE = { MENU: 'MENU', PLAYING: 'PLAYING', GAME_OVER: 'GAME_OVER', VICTORY: 'VICTORY' };
+        const MONSTER_STATE = { NORMAL: 'NORMAL', HIT: 'HIT', ATTACK: 'ATTACK', DEFEAT: 'DEFEAT' };
+
+        const App = () => {
+            const [gameState, setGameState] = useState(GAME_STATE.MENU);
+            const [stage, setStage] = useState(1);
+            const [questionCount, setQuestionCount] = useState(0);
+            const [hp, setHp] = useState(3);
+            const [currentQuestion, setCurrentQuestion] = useState(null);
+            const [inputs, setInputs] = useState(['', '', '', '']); 
+            const [activeInputIndex, setActiveInputIndex] = useState(1);
+            const [timeLeft, setTimeLeft] = useState(30);
+            const [monsterState, setMonsterState] = useState(MONSTER_STATE.NORMAL);
+            const [isPerfect, setIsPerfect] = useState(true);
+            const [shake, setShake] = useState(false);
+            const [mistakes, setMistakes] = useState([]);
+            const [feedback, setFeedback] = useState(null);
+            const [score, setScore] = useState(0);
+            const [combo, setCombo] = useState(0);
+
+            useEffect(() => {
+                let timer;
+                if (gameState === GAME_STATE.PLAYING && timeLeft > 0 && monsterState !== MONSTER_STATE.HIT) {
+                    timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+                } else if (timeLeft === 0 && gameState === GAME_STATE.PLAYING) handleDamage('TIMEOUT');
+                return () => clearInterval(timer);
+            }, [timeLeft, gameState, monsterState]);
+
+            const startGame = () => {
+                setGameState(GAME_STATE.PLAYING); setStage(1); setQuestionCount(0); setHp(3); setIsPerfect(true); setMistakes([]); setScore(0); setCombo(0);
+                nextQuestion(1, 0);
+            };
+
+            const nextQuestion = (currentStage, currentCount) => {
+                const q = generateQuestion(currentStage, currentCount);
+                setCurrentQuestion(q); setInputs(['', '', '', '']); setActiveInputIndex(1);
+                setTimeLeft((currentStage === 2 || (currentStage === 1 && currentCount === 4)) ? 60 : 30);
+                setMonsterState(MONSTER_STATE.NORMAL);
+            };
+
+            const handleDamage = (reason = 'WRONG') => {
+                if (currentQuestion) setMistakes(prev => [...prev, { latex: currentQuestion.latex, ans: currentQuestion.answers, userAns: [...inputs] }]);
+                setCombo(0);
+                setFeedback({ type: 'WRONG', text: reason === 'TIMEOUT' ? 'TIME UP!' : 'MISS!' });
+                setHp(prev => {
+                    const newHp = prev - 1;
+                    setShake(true); setTimeout(() => setShake(false), 400); setTimeout(() => setFeedback(null), 800);
+                    if (newHp <= 0) { setGameState(GAME_STATE.GAME_OVER); setMonsterState(MONSTER_STATE.ATTACK); }
+                    else { setIsPerfect(false); setMonsterState(MONSTER_STATE.ATTACK); setTimeout(() => nextQuestion(stage, questionCount), 1000); }
+                    return newHp;
+                });
+            };
+
+            const checkAnswer = () => {
+                if (!currentQuestion || gameState !== GAME_STATE.PLAYING) return;
+                const normalize = str => str.replace(/\s/g, '').replace(/\+\-/g, '-');
+                const u1 = normalize(formatPoly(inputs[0], inputs[1])); const u2 = normalize(formatPoly(inputs[2], inputs[3]));
+                const c1 = normalize(currentQuestion.answers[0]); const c2 = normalize(currentQuestion.answers[1]);
+                if ((u1 === c1 && u2 === c2) || (u1 === c2 && u2 === c1)) handleCorrect(); else handleDamage('WRONG');
+            };
+
+            const handleCorrect = () => {
+                setMonsterState(MONSTER_STATE.HIT);
+                const points = Math.floor((500 + timeLeft * 10) * (1 + (combo * 0.2)));
+                setScore(prev => prev + points); setCombo(prev => prev + 1);
+                setFeedback({ type: 'CORRECT', text: `+${points}` }); setTimeout(() => setFeedback(null), 800);
+                setTimeout(() => {
+                    let nextCount = questionCount + 1; let nextStage = stage;
+                    if (nextCount >= 5) { nextStage = stage + 1; nextCount = 0; }
+                    if (nextStage > 2) { setGameState(GAME_STATE.VICTORY); setMonsterState(MONSTER_STATE.DEFEAT); }
+                    else { setStage(nextStage); setQuestionCount(nextCount); nextQuestion(nextStage, nextCount); }
+                }, 1000);
+            };
+
+            const handleInput = (char) => {
+                if (gameState !== GAME_STATE.PLAYING) return;
+                setInputs(prev => {
+                    const newInputs = [...prev]; let currentVal = newInputs[activeInputIndex];
+                    if (activeInputIndex === 1 || activeInputIndex === 3) {
+                        if (/[0-9]/.test(char) && currentVal === '') currentVal = '+' + char;
+                        else if (['+', '-'].includes(char)) { if (currentVal === '' || currentVal === '+' || currentVal === '-') currentVal = char; else return prev; }
+                        else { if (currentVal.length < 5) currentVal += char; }
+                    } else {
+                        if (/[0-9]/.test(char)) { if (currentVal.length < 3) currentVal += char; }
+                    }
+                    newInputs[activeInputIndex] = currentVal; return newInputs;
+                });
+            };
+
+            const handleDelete = () => setInputs(prev => { const newInputs = [...prev]; if (newInputs[activeInputIndex].length > 0) newInputs[activeInputIndex] = newInputs[activeInputIndex].slice(0, -1); return newInputs; });
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (gameState !== GAME_STATE.PLAYING) return;
+                    const key = e.key;
+                    if (/^[0-9+\-]$/.test(key)) handleInput(key);
+                    else if (key === 'Backspace' || key === 'Delete') handleDelete();
+                    else if (key === 'Enter') checkAnswer();
+                    else if (key === 'ArrowRight' || key === 'Tab') { e.preventDefault(); setActiveInputIndex(prev => stage < 2 ? (prev === 1 ? 3 : 1) : (prev + 1 > 3 ? 0 : prev + 1)); }
+                    else if (key === 'ArrowLeft') { e.preventDefault(); setActiveInputIndex(prev => stage < 2 ? (prev === 3 ? 1 : 3) : (prev - 1 < 0 ? 3 : prev - 1)); }
+                };
+                window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [gameState, activeInputIndex, inputs, stage]);
+
+            const getMonsterImage = () => {
+                if (gameState === GAME_STATE.VICTORY) return isPerfect ? ASSETS.WIN_PERFECT : ASSETS.WIN_MISS;
+                if (gameState === GAME_STATE.GAME_OVER) return ASSETS.DEFEAT;
+                switch (monsterState) { case MONSTER_STATE.HIT: return ASSETS.HIT; case MONSTER_STATE.ATTACK: return ASSETS.ATTACK; case MONSTER_STATE.DEFEAT: return ASSETS.DEFEAT; default: return ASSETS.NORMAL; }
+            };
+
+            return (
+                <div style={{ backgroundColor: shake ? '#450a0a' : 'transparent', transition: 'background-color 0.4s' }} className="min-h-screen w-full flex flex-col items-center justify-center relative p-4">
+                    <div className="scanline"></div><div className="crt-overlay"></div>
+                    
+                    {feedback && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+                            <h2 className={cn("text-5xl md:text-7xl font-bold drop-shadow-[0_0_15px_rgba(0,0,0,1)]", feedback.type === 'CORRECT' ? 'text-yellow-400 neon-text' : 'text-red-500 neon-pink')}>{feedback.text}</h2>
+                        </div>
+                    )}
+                    
+                    <div className="relative z-10 w-full max-w-lg flex flex-col items-center justify-between min-h-[90vh]">
+                        {gameState === GAME_STATE.PLAYING && (
+                            <div className="w-full flex justify-between items-start mb-4 text-xs md:text-sm neon-text font-bold">
+                                <div className="flex flex-col w-1/3"><span className={stage === 2 ? 'text-fuchsia-400' : ''}>STAGE {stage}</span><span className="text-[10px] text-gray-400">Q {questionCount + 1}/5</span></div>
+                                <div className="flex flex-col items-center w-1/3"><span className="text-yellow-400 text-lg md:text-xl tracking-widest">{score}</span>{combo > 1 && (<span className="text-[10px] text-cyan-300 animate-pulse">{combo} COMBO!</span>)}</div>
+                                <div className="flex flex-col items-end w-1/3"><div className="flex gap-1 mb-1">{Array.from({length: 3}).map((_, i) => (<div key={i} style={{ opacity: i >= hp ? 0.3 : 1 }}><Heart className={cn("w-5 h-5", i < hp ? 'fill-red-500 text-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'text-gray-800')} /></div>))}</div><div className={cn("transition-colors", timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-cyan-400')}>{timeLeft}s</div></div>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-center w-full flex-1 min-h-[200px]">
+                            <div className={cn("relative flex items-center justify-center transition-all duration-300", (gameState === GAME_STATE.VICTORY || gameState === GAME_STATE.GAME_OVER) ? 'w-64 h-64 md:w-80 md:h-80' : 'w-48 h-48 md:w-64 md:h-64')}
+                                style={{ transform: monsterState === MONSTER_STATE.HIT ? 'scale(0.9)' : monsterState === MONSTER_STATE.ATTACK ? 'scale(1.1) translateY(20px)' : 'scale(1)', filter: monsterState === MONSTER_STATE.HIT ? 'brightness(2) opacity(0.6)' : 'brightness(1)' }}>
+                                <img src={getMonsterImage()} alt="Monster" className="w-full h-full object-contain pixelated relative z-10" />
+                            </div>
+                        </div>
+
+                        {gameState === GAME_STATE.MENU && (
+                            <div className="text-center space-y-8 mt-8 flex-1 flex flex-col justify-end pb-12">
+                                <h1 className="text-2xl md:text-4xl neon-text leading-loose tracking-tighter">FACTORIZE<br/><span className="text-4xl md:text-5xl text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">SLAYER</span><br/><span className="text-sm neon-pink tracking-widest mt-2 block">DUAL CORE</span></h1>
+                                <button onClick={startGame} className="px-8 py-4 border-4 border-cyan-500 text-cyan-400 hover:bg-cyan-900 hover:text-white transition-all text-lg shadow-[0_0_15px_rgba(8,145,178,0.5)]">START GAME</button>
+                            </div>
+                        )}
+
+                        {gameState === GAME_STATE.PLAYING && currentQuestion && (
+                            <div className="w-full flex flex-col items-center pb-4">
+                                <div className="bg-gray-950/80 border-2 border-cyan-500/50 p-2 rounded-lg w-full text-center mb-4 shadow-[0_0_15px_rgba(8,145,178,0.2)]"><MathRenderer latex={currentQuestion.latex} /></div>
+
+                                <div className="flex flex-row items-center justify-center gap-2 w-full mb-4 font-mono text-lg md:text-2xl">
+                                    <div className="flex items-center justify-center bg-gray-900/80 rounded px-2 py-3 border border-gray-700 shadow-inner">
+                                        <span className="text-gray-500 mx-1">(</span>
+                                        {stage === 2 && (<div onClick={() => setActiveInputIndex(0)} className={cn("w-12 h-10 border-b-4 flex items-center justify-center cursor-pointer text-white tracking-widest mx-1 relative", activeInputIndex === 0 ? 'border-cyan-400 bg-cyan-900/40 shadow-[0_0_10px_rgba(8,145,178,0.3)]' : 'border-gray-700 bg-black/50')}>{inputs[0] || <span className="text-gray-600">1</span>}{activeInputIndex === 0 && <span className="absolute bottom-1 right-1 w-2 h-0.5 bg-cyan-400 animate-pulse" />}</div>)}
+                                        <span className="text-white mx-1">x</span>
+                                        <div onClick={() => setActiveInputIndex(1)} className={cn("w-16 h-10 border-b-4 flex items-center justify-center cursor-pointer text-white tracking-widest mx-1 relative", activeInputIndex === 1 ? 'border-cyan-400 bg-cyan-900/40 shadow-[0_0_10px_rgba(8,145,178,0.3)]' : 'border-gray-700 bg-black/50')}>{inputs[1]}{activeInputIndex === 1 && <span className="absolute bottom-1 right-1 w-2 h-0.5 bg-cyan-400 animate-pulse" />}</div>
+                                        <span className="text-gray-500 mx-1">)</span>
+                                    </div>
+                                    <div className="flex items-center justify-center bg-gray-900/80 rounded px-2 py-3 border border-gray-700 shadow-inner">
+                                        <span className="text-gray-500 mx-1">(</span>
+                                        {stage === 2 && (<div onClick={() => setActiveInputIndex(2)} className={cn("w-12 h-10 border-b-4 flex items-center justify-center cursor-pointer text-white tracking-widest mx-1 relative", activeInputIndex === 2 ? 'border-cyan-400 bg-cyan-900/40 shadow-[0_0_10px_rgba(8,145,178,0.3)]' : 'border-gray-700 bg-black/50')}>{inputs[2] || <span className="text-gray-600">1</span>}{activeInputIndex === 2 && <span className="absolute bottom-1 right-1 w-2 h-0.5 bg-cyan-400 animate-pulse" />}</div>)}
+                                        <span className="text-white mx-1">x</span>
+                                        <div onClick={() => setActiveInputIndex(3)} className={cn("w-16 h-10 border-b-4 flex items-center justify-center cursor-pointer text-white tracking-widest mx-1 relative", activeInputIndex === 3 ? 'border-cyan-400 bg-cyan-900/40 shadow-[0_0_10px_rgba(8,145,178,0.3)]' : 'border-gray-700 bg-black/50')}>{inputs[3]}{activeInputIndex === 3 && <span className="absolute bottom-1 right-1 w-2 h-0.5 bg-cyan-400 animate-pulse" />}</div>
+                                        <span className="text-gray-500 mx-1">)</span>
+                                    </div>
+                                </div>
+                                <Keypad onInput={handleInput} onDelete={handleDelete} onEnter={checkAnswer} />
+                            </div>
+                        )}
+
+                        {gameState === GAME_STATE.GAME_OVER && (
+                            <div className="text-center space-y-6 bg-black/90 p-8 rounded border-2 border-red-900 shadow-[0_0_30px_rgba(153,27,27,0.5)] z-20 w-full">
+                                <h2 className="text-3xl text-red-500 font-bold animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,1)]">GAME OVER</h2>
+                                <div className="text-gray-300 text-sm"><p className="text-2xl text-yellow-400 mb-2 font-bold drop-shadow-[0_0_5px_rgba(250,204,21,0.8)]">SCORE: {score}</p><p>DIED AT STAGE {stage}</p></div>
+                                {mistakes.length > 0 && (
+                                    <div className="w-full text-left bg-gray-900/80 p-4 rounded border border-red-900/50 mt-4"><h3 className="text-red-400 text-xs mb-2 border-b border-red-900/50 pb-1">MISTAKES</h3><div className="space-y-3 max-h-40 overflow-y-auto pr-2">
+                                        {mistakes.map((m, i) => (<div key={i} className="text-[10px] sm:text-xs border-b border-gray-800 pb-2"><div className="mb-1 flex items-center gap-2"><MathRenderer latex={m.latex} className="!text-sm lg:!text-base !tracking-normal !min-h-0 py-0" /></div><div className="text-yellow-400 pl-2">Ans: ({m.ans[0]})({m.ans[1]})</div><div className="text-gray-500 pl-2 mt-1">You: ({formatPoly(m.userAns[0], m.userAns[1])})({formatPoly(m.userAns[2], m.userAns[3])})</div></div>))}
+                                    </div></div>
+                                )}
+                                <button onClick={() => setGameState(GAME_STATE.MENU)} className="px-6 py-3 mt-4 border-2 border-gray-500 hover:bg-gray-800 text-white w-full transition-colors">RETURN TO MENU</button>
+                            </div>
+                        )}
+
+                        {gameState === GAME_STATE.VICTORY && (
+                            <div className="text-center space-y-6 bg-black/90 p-8 rounded border-2 border-cyan-900 shadow-[0_0_30px_rgba(8,145,178,0.5)] z-20 w-full">
+                                <h2 className="text-2xl neon-pink font-bold animate-bounce">MISSION COMPLETE</h2>
+                                {isPerfect ? (<div className="text-yellow-400 space-y-4"><p className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-400 to-yellow-200 animate-pulse drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]">PERFECT CLEAR!</p><p className="text-3xl font-bold text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.8)]">SCORE: {score}</p><p className="text-sm text-cyan-300 tracking-widest font-bold">YOU ARE A MATH LEGEND</p></div>) : (<div className="text-cyan-400 space-y-3"><p className="text-2xl font-bold text-yellow-400">SCORE: {score}</p><p className="text-lg">TARGET ELIMINATED</p></div>)}
+                                {mistakes.length > 0 && (
+                                    <div className="w-full text-left bg-gray-900/80 p-4 rounded border border-cyan-900/50 mt-4"><h3 className="text-cyan-400 text-xs mb-2 border-b border-cyan-900/50 pb-1">REVIEW</h3><div className="space-y-3 max-h-40 overflow-y-auto pr-2">
+                                        {mistakes.map((m, i) => (<div key={i} className="text-[10px] sm:text-xs border-b border-gray-800 pb-2"><div className="mb-1 flex items-center gap-2"><MathRenderer latex={m.latex} className="!text-sm lg:!text-base !tracking-normal !min-h-0 py-0" /></div><div className="text-yellow-400 pl-2">Ans: ({m.ans[0]})({m.ans[1]})</div><div className="text-gray-500 pl-2 mt-1">You: ({formatPoly(m.userAns[0], m.userAns[1])})({formatPoly(m.userAns[2], m.userAns[3])})</div></div>))}
+                                    </div></div>
+                                )}
+                                <button onClick={() => setGameState(GAME_STATE.MENU)} className="px-6 py-3 border-2 border-cyan-500 hover:bg-cyan-900 text-white w-full mt-6 shadow-[0_0_10px_rgba(8,145,178,0.5)] transition-colors">PLAY AGAIN</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
