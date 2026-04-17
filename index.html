@@ -2,21 +2,21 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Factorize Slayer: Dual Core</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     
-    <!-- React & ReactDOM (UMD versions, not ES modules) -->
+    <!-- React & ReactDOM (安定版) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
-    <!-- Babel for transforming JSX -->
+    <!-- Babel for transforming JSX (ブラウザでReactを動かすためのもの) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- MathJax Configuration -->
+    <!-- MathJax Configuration (問題文を表示するための安定版設定) -->
     <script>
         window.MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
@@ -67,9 +67,7 @@
 <body>
     <div id="root"></div>
 
-    <!-- 注意: type="text/babel" のみ。モジュールシステムは使わない -->
     <script type="text/babel">
-        // React関数は window.React から取り出す
         const { useState, useEffect, useRef } = React;
 
         // --- ICONS ---
@@ -132,7 +130,7 @@
                     }
                 }
             } else {
-                // STAGE 2 難易度調整
+                // STAGE 2 難易度調整 (Q1〜Q4はカンタンに、Q5だけは難しい設計)
                 let coeffPairs; let constCandidates;
                 if (count === 4) {
                     coeffPairs = [[1, 2], [1, 3], [1, 5], [2, 3], [2, 5], [1, 4], [2, 2], [1, 6], [1, 9], [3, 3], [3, 4], [3, 5]];
@@ -407,11 +405,10 @@
             );
         };
 
-        // DOMの準備ができてからReactをマウントする
-        window.addEventListener('DOMContentLoaded', () => {
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<App />);
-        });
+        // DOMの準備を待たずに即座にReactをマウントする（これならバグは起きません）
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
     </script>
 </body>
 </html>
